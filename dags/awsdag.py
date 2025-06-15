@@ -1,71 +1,20 @@
 import boto3
 import csv
-import os
 import io
 import re
 import pandas as pd
 import pendulum
 import logging
-from sqlalchemy import create_engine
-from sqlalchemy.engine import URL
-from sqlalchemy.orm import declarative_base,Session
-from sqlalchemy import Column, Integer,Float,Boolean, DateTime, String
-from dotenv import load_dotenv
+from sqlalchemy.orm import Session
 from airflow.decorators import dag, task
 from utilities.functions import name_converter, country_name, state_name,invalid_email, product_category
+from database_config.database import database_initiliaze
+from database_config.database import engine
+from schemas.schema import Order
+from aws_config.aws import ACCESS_KEY, SECRET_KEY, BUCKET_NAME
 
 
-Base=declarative_base()
-load_dotenv()
 task_logger=logging.getLogger('workflow.task')
-
-#s3 Bucket credentials
-SECRET_KEY=os.environ['SECRET_KEY']
-ACCESS_KEY=os.environ['ACCESS_KEY']
-BUCKET_NAME=os.environ['BUCKET_NAME']
-
-# #DB credentials
-DRIVERNAME=os.environ['DRIVERNAME']
-POSTGRES_PASSWORD=os.environ['POSTGRES_PASSWORD']
-POSTGRES_USER=os.environ['POSTGRES_USER']
-POSTGRES_DB=os.environ['POSTGRES_DB']
-HOST=os.environ['HOST']
-
-#create the database configuration
-database_configuration=URL.create(drivername=DRIVERNAME,
-                                  username=POSTGRES_USER, 
-                                  password=POSTGRES_PASSWORD,
-                                  host=HOST, 
-                                  database=POSTGRES_DB
-                                  )
-#start the engine
-engine=create_engine(database_configuration)
-
-#The order table created to insert into the database
-class Order(Base):
-    __tablename__="order"
-    id=Column(Integer, primary_key=True, autoincrement=True)
-    order_id=Column(Integer)
-    order_date=Column(DateTime)
-    customer_id=Column(String)
-    customer_name=Column(String)
-    email=Column(String)
-    product=Column(String)
-    product_category=Column(String)
-    quantity=Column(Float)
-    price_usd=Column(Float)
-    country=Column(String)
-    state=Column(String)
-    invalid_email=Column(Boolean)
-    clv=Column(Float)
-    new_or_returning=Column(String)
-
-    def __repr__(Self):
-        return {Self.order_id}
-#initializing the database   
-def database_initiliaze():
-    return Base.metadata.create_all(engine)
-
 
 #starting dag
 @dag(
@@ -113,7 +62,6 @@ def workflow():
         except Exception as e:
             task_logger.error("error encountered generating DataFrame:{e}")
        
-    
     
     @task()
     #This is the tramsform function to clean and transformed the data to be data
@@ -175,11 +123,6 @@ def workflow():
         
         return new_data_frame
     
-
-    extraction=extract()
-    transformation=transform(extraction)
-workflow()
-    
     
 
     @task()
@@ -228,9 +171,7 @@ workflow()
             task_logger.warning(f"Database not initiliazed.skipping load")
             return "Skipped load due to Database error"
 
-            
-
-                
+                          
                         
     #calling the tasks
     Initiaze_DB=database_initialization()
