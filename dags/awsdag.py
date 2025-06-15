@@ -58,7 +58,7 @@ class Order(Base):
     state=Column(String)
     invalid_email=Column(Boolean)
     clv=Column(Float)
-    new_or_returning_customer=Column(String)
+    new_or_returning=Column(String)
 
     def __repr__(Self):
         return {Self.order_id}
@@ -93,7 +93,7 @@ def workflow():
             return None
 
     @task()
-    #This task extract data from S3
+    #This is the extract function to pull raw data in batches from aws s3 bucket
     def extract():
         
         try:
@@ -116,6 +116,8 @@ def workflow():
     
     
     @task()
+    #This is the tramsform function to clean and transformed the data to be data
+
     def transform(data_frame):
         new_data_frame=data_frame.copy()
 
@@ -155,7 +157,7 @@ def workflow():
         new_data_frame.drop(index=24, inplace=True)
 
         #Adding CLV
-        new_data_frame['CLV']=new_data_frame.groupby('customer_id')['price_usd'].transform('sum')
+        new_data_frame['clv']=new_data_frame.groupby('customer_id')['price_usd'].transform('sum')
 
         # new/returning flag
 
@@ -170,6 +172,7 @@ def workflow():
         new_data_frame['new_or_returning'] = new_data_frame['new_or_returning'].map({True: 'New', False: 'Returning'})
 
         task_logger.info(new_data_frame)
+        
         return new_data_frame
     
 
@@ -178,5 +181,66 @@ def workflow():
 workflow()
     
     
+
+    @task()
+    #The loaded function to push the transformed data to posgres DB 
+    def load(transformed_data, database_state):
+        #An empty list to hold the populated data from each row
+        data_to_insert=[]
+
+        # Create and return an Order object from the DataFrame row with customer, product, and transaction details
+
+        def create_object(row):
+            order=Order(
+                order_id=row['order_id'],
+                order_date=row['order_date'],
+                customer_id=row['customer_id'],
+                customer_name=row['customer_name'],
+                email=row['email'],
+                product=row['product'],
+                product_category=row['product_category'],
+                quantity=row['quantity'],
+                price_usd=row['price_usd'],
+                country=row['country'],
+                state=row['state'],
+                invalid_email=row['invalid_email'],
+                clv=row['clv'],
+                new_or_returning=row['new_or_returning']
+
+
+            )
+
+            data_to_insert.append(order)
+
+        task_logger.info(f"logging: {database_state}")
+        if database_state is True:
+            data_to_load=transformed_data
+            task_logger.info(data_to_load)
+            task_logger.info(f"Database is ready and starting to load data....")
+            data_to_load.apply(lambda row:create_object(row), axis=1)
+
+            with Session(engine) as session:
+                session.add_all(data_to_insert)
+                session.commit()
+                task_logger.info(f"data loaded successfully")
+                return "load complete"
+        else:
+            task_logger.warning(f"Database not initiliazed.skipping load")
+            return "Skipped load due to Database error"
+
+            
+
+                
+                        
+    #calling the tasks
+    Initiaze_DB=database_initialization()
+    extraction=extract()
+    transformation=transform(extraction)
+    load(transformation, Initiaze_DB)
+#calling the workflow of the dag
+workflow()
+                    
+    
+
 
 
