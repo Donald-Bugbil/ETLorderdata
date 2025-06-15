@@ -117,6 +117,7 @@ def workflow():
     
     @task()
     #This is the tramsform function to clean and transformed the data to be data
+
     def transform(data_frame):
         new_data_frame=data_frame.copy()
 
@@ -173,6 +174,12 @@ def workflow():
         task_logger.info(new_data_frame)
         
         return new_data_frame
+    
+
+    extraction=extract()
+    transformation=transform(extraction)
+workflow()
+    
     
 
     @task()
